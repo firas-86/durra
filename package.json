@@ -6,6 +6,10 @@
   "build": "cd frontend && npm install && npm run build",
   "start": "node server.ts"
   },
+  "scripts": {
+  "build": "tsc && cd frontend && npm install && npm run build",
+  "start": "node dist/server.js"
+  }
   "dependencies": {
     "express": "^4.21.2",
     "cors": "^2.8.6",
