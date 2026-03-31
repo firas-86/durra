@@ -2365,30 +2365,12 @@ async function startServer() {
   });
 
   // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "custom",
-      root: path.resolve(__dirname, "frontend"),
-      configFile: path.resolve(__dirname, "frontend", "vite.config.ts"),
-    });
-    app.use(async (req, res, next) => {
-      if (req.method === 'GET' && req.headers.accept?.includes('text/html')) {
-        const url = req.originalUrl;
-        consoleLog(`DEBUG: SPA fallback for ${url}`);
-        try {
-          let template = fs.readFileSync(path.resolve(__dirname, "frontend", "index.html"), "utf-8");
-          template = await vite.transformIndexHtml(url, template);
-          return res.status(200).set({ "Content-Type": "text/html" }).end(template);
-        } catch (e) {
-          vite.ssrFixStacktrace(e as Error);
-          return next(e);
-        }
-      }
-      next();
-    });
-    app.use(vite.middlewares);
-  } else {
+  app.use(express.static(path.join(__dirname, "frontend", "dist")));
+
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "frontend", "dist", "index.html"));
+});
+  else {
     app.use(express.static(path.join(__dirname, "frontend", "dist")));
     app.get("*", (req, res) => {
       res.sendFile(path.join(__dirname, "frontend", "dist", "index.html"));
