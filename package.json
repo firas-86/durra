@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-  "build": "cd frontend && npm install && npm run build",
+  "build": "tsc",
   "start": "node server.ts"
   },
   "dependencies": {
