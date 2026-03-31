@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+@theme {
+  --color-durra-green: #006d3c;
+  --color-durra-green-light: #008f4d;
+  --color-durra-green-dark: #004d2a;
+  --color-durra-red: #e11d48;
+}
+
+@layer base {
+  html {
+    @apply h-full;
+  }
+  body {
+    @apply h-full antialiased;
+  }
+}
