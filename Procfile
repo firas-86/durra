@@ -1,1 +1,1 @@
-web: npx tsx server.ts
+npx tsx server.ts
