@@ -1,9 +1,15 @@
 {
   "name": "backend",
-  "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "npx tsx server.ts"
+    "build": "npm install",
+    "start": "node --loader tsx server.ts"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "cors": "^2.8.6",
+    "dotenv": "^17.2.3",
+    "tsx": "^4.21.0"
   }
 }
