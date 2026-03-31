@@ -1,8 +1,7 @@
 {
   "name": "fullstack-app",
   "scripts": {
-  "install-deps": "npm install && cd backend && npm install && cd ../frontend && npm install",
-  "build": "npm run build --prefix frontend && tsc --project backend/tsconfig.json",
-  "start": "node backend/dist/server.js"
+  "build": "vite build && tsc",
+  "start": "node dist/server.js"
 }
 }
