@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "build": "npm install",
-    "start": "node --import tsx server.ts"
+  "build": "cd frontend && npm install && npm run build",
+  "start": "node server.ts"
   },
   "dependencies": {
     "express": "^4.21.2",
