@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "build": "npx tsc",
-    "start": "node dist/server.js"
+  "build": "npm install && npx tsc",
+  "start": "node dist/server.js"
   },
   "dependencies": {
     "express": "^4.21.2",
