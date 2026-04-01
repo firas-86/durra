@@ -10,6 +10,7 @@ import {
 import { fetchWithAuth } from "../utils/api";
 import CustomDatePicker from "../components/CustomDatePicker";
 import { useToast } from "../context/ToastContext";
+import { useAuth } from "../context/AuthContext";
 import ConfirmModal from "../components/ConfirmModal";
 
 interface Pallet {
@@ -24,6 +25,7 @@ interface Pallet {
 
 const PackagingDepartment = () => {
   const { showToast } = useToast();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<"operations" | "inventory" | "jard">("operations");
   
   // Data states
@@ -35,10 +37,9 @@ const PackagingDepartment = () => {
   const [orders, setOrders] = useState<any[]>([]);
   
   // Permissions
-  const userStr = localStorage.getItem('user');
-  const user = userStr ? JSON.parse(userStr) : null;
-  const userPermissions = JSON.parse(localStorage.getItem('user_permissions') || '[]');
-  const isPackagingSupervisor = user?.role === 'admin' || userPermissions.includes('packaging_supervisor') || userPermissions.includes('manage_production');
+  const isPackagingSupervisor = user?.role === 'admin' || 
+    (user?.permissions && Array.isArray(user.permissions) && 
+     (user.permissions.includes('packaging_supervisor') || user.permissions.includes('manage_production')));
   
   // UI states
   const [loading, setLoading] = useState(true);
@@ -103,10 +104,12 @@ const PackagingDepartment = () => {
       processing: processingPallets.length,
       awaitingSupervisor: awaitingSupervisorPallets.length,
       packagedToday: allPallets.filter(p => 
-        p.status === 'packaged' && 
+        (p.status === 'packaging_done' || p.status === 'packaging_qc_approved' || p.status === 'sent_to_warehouse' || p.status === 'in_warehouse') && 
         p.created_at?.startsWith(today)
       ).length,
-      totalPackaged: allPallets.filter(p => p.status === 'packaged').length
+      totalPackaged: allPallets.filter(p => 
+        p.status === 'packaging_done' || p.status === 'packaging_qc_approved' || p.status === 'sent_to_warehouse' || p.status === 'in_warehouse'
+      ).length
     };
   };
 
@@ -293,9 +296,6 @@ const PackagingDepartment = () => {
 
   const handleSupervisorSign = async (pallet: Pallet) => {
     try {
-      const userStr = localStorage.getItem('user');
-      const user = userStr ? JSON.parse(userStr) : null;
-      
       let certData: any = pallet.packaging_certificate_data;
       if (typeof certData === 'string') {
         try { certData = JSON.parse(certData); } catch (e) { certData = {}; }
@@ -308,7 +308,7 @@ const PackagingDepartment = () => {
           supervisor: {
             signed: true,
             date: new Date().toISOString(),
-            name: user?.name || 'مشرف التغليف'
+            name: user?.username || 'مشرف التغليف'
           }
         }
       };
@@ -464,7 +464,7 @@ const PackagingDepartment = () => {
             <div className="p-6 border-b border-slate-100 bg-gradient-to-r from-amber-50 to-white flex justify-between items-center">
               <h2 className="text-xl font-bold flex items-center gap-2 text-amber-800">
                 <ArrowRight className="w-6 h-6" />
-                جرد الإنتاج الوارد (من قسم البندورة)
+                جرد الإنتاج الوارد (من أقسام الإنتاج)
               </h2>
               <div className="text-xs text-slate-400 font-medium">إحصائيات زمنية للطبالي الواردة</div>
             </div>
@@ -572,7 +572,12 @@ const PackagingDepartment = () => {
                     const now = new Date();
                     const stats: Record<string, { today: number, week: number, month: number, threeMonths: number, year: number }> = {};
                     
-                    allPallets.filter(p => p.status === 'packaged').forEach(pallet => {
+                    allPallets.filter(p => 
+                      p.status === 'packaging_done' || 
+                      p.status === 'packaging_qc_approved' || 
+                      p.status === 'sent_to_warehouse' || 
+                      p.status === 'in_warehouse'
+                    ).forEach(pallet => {
                       let certData: any = {};
                       try {
                         certData = typeof pallet.packaging_certificate_data === 'string' ? JSON.parse(pallet.packaging_certificate_data) : pallet.packaging_certificate_data;
@@ -995,7 +1000,7 @@ const PackagingDepartment = () => {
               <div>
                 <p className="text-sm font-medium text-slate-500">جاهز للمستودع</p>
                 <p className="text-2xl font-bold text-slate-800">
-                  {allPallets.filter(p => p.status === 'packaged').length}
+                  {allPallets.filter(p => p.status === 'packaging_qc_approved').length}
                 </p>
               </div>
             </div>
@@ -1225,194 +1230,200 @@ const PackagingDepartment = () => {
                   </div>
                 </div>
 
-                {/* Packaging Info Section (Editable during processing) */}
+                {/* Packaging Info Section (Editable during processing, Read-only otherwise) */}
                 <div className="space-y-4">
                   <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
                     <Tag className="w-5 h-5 text-indigo-500" />
-                    <h4 className="font-bold text-slate-700">بيانات شهادة التغليف (يرجى تعبئة كافة الحقول)</h4>
+                    <h4 className="font-bold text-slate-700">بيانات شهادة التغليف</h4>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div>
-                      <CustomDatePicker
-                        label="تاريخ التغليف"
-                        value={certData.date}
-                        onChange={(date) => setCertData({ ...certData, date })}
-                        disabled={selectedPallet.status !== 'packaging_in_progress'}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">الصنف</label>
-                      <input 
-                        type="text" 
-                        name="item_name" 
-                        value={certData.item_name} 
-                        onChange={handleCertInputChange} 
-                        disabled={selectedPallet.status !== 'packaging_in_progress'}
-                        className={`w-full px-4 py-2.5 rounded-xl text-right transition-all ${
-                          selectedPallet.status === 'packaging_in_progress'
-                            ? "bg-white border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                            : "bg-slate-50 border border-slate-100 text-slate-600 cursor-not-allowed"
-                        }`}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">رقم التشغيلة / الخلطة</label>
-                      <input 
-                        type="text" 
-                        name="batch_number" 
-                        value={certData.batch_number} 
-                        onChange={handleCertInputChange} 
-                        disabled={selectedPallet.status !== 'packaging_in_progress'}
-                        className={`w-full px-4 py-2.5 rounded-xl text-right transition-all ${
-                          selectedPallet.status === 'packaging_in_progress'
-                            ? "bg-white border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                            : "bg-slate-50 border border-slate-100 text-slate-600 cursor-not-allowed"
-                        }`}
-                      />
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">وزن التعبئة</label>
-                      <input 
-                        type="text" 
-                        name="filling_weight" 
-                        value={certData.filling_weight} 
-                        onChange={handleCertInputChange} 
-                        disabled={selectedPallet.status !== 'packaging_in_progress'}
-                        className={`w-full px-4 py-2.5 rounded-xl text-right transition-all ${
-                          selectedPallet.status === 'packaging_in_progress'
-                            ? "bg-white border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                            : "bg-slate-50 border border-slate-100 text-slate-600 cursor-not-allowed"
-                        }`}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">عدد الكراتين النهائي</label>
-                      <input 
-                        type="number" 
-                        name="carton_count" 
-                        value={certData.carton_count} 
-                        onChange={handleCertInputChange} 
-                        disabled={selectedPallet.status !== 'packaging_in_progress'}
-                        className={`w-full px-4 py-2.5 rounded-xl text-right transition-all ${
-                          selectedPallet.status === 'packaging_in_progress'
-                            ? "bg-white border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                            : "bg-slate-50 border border-slate-100 text-slate-600 cursor-not-allowed"
-                        }`}
-                      />
-                    </div>
-                    <div>
-                      <CustomDatePicker
-                        label="تاريخ الإنتاج"
-                        value={certData.production_date}
-                        onChange={(date) => setCertData({ ...certData, production_date: date })}
-                        disabled={selectedPallet.status !== 'packaging_in_progress'}
-                      />
-                    </div>
-                    
-                    <div>
-                      <CustomDatePicker
-                        label="تاريخ الانتهاء"
-                        value={certData.expiry_date}
-                        onChange={(date) => setCertData({ ...certData, expiry_date: date })}
-                        disabled={selectedPallet.status !== 'packaging_in_progress'}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">رقم شهادة التغليف</label>
-                      <input 
-                        type="text" 
-                        name="certificate_number" 
-                        value={certData.certificate_number} 
-                        onChange={handleCertInputChange} 
-                        disabled={selectedPallet.status !== 'packaging_in_progress'}
-                        className={`w-full px-4 py-2.5 rounded-xl text-right transition-all ${
-                          selectedPallet.status === 'packaging_in_progress'
-                            ? "bg-white border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                            : "bg-slate-50 border border-slate-100 text-slate-600 cursor-not-allowed"
-                        }`}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">إلى مستودع</label>
-                      <input
-                        type="text"
-                        name="warehouse_target"
-                        value={certData.warehouse_target}
-                        onChange={handleCertInputChange}
-                        disabled={selectedPallet.status !== 'packaging_in_progress'}
-                        className={`w-full px-4 py-2.5 rounded-xl text-right transition-all ${
-                          selectedPallet.status === 'packaging_in_progress'
-                            ? "bg-white border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                            : "bg-slate-50 border border-slate-100 text-slate-600 cursor-not-allowed"
-                        }`}
-                        placeholder="اكتب اسم المستودع"
-                      />
-                    </div>
+                  {selectedPallet.status === 'packaging_in_progress' ? (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div>
+                        <CustomDatePicker
+                          label="تاريخ التغليف"
+                          value={certData.date}
+                          onChange={(date) => setCertData({ ...certData, date })}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">الصنف</label>
+                        <input 
+                          type="text" 
+                          name="item_name" 
+                          value={certData.item_name} 
+                          onChange={handleCertInputChange} 
+                          className="w-full px-4 py-2.5 rounded-xl text-right transition-all bg-white border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">رقم التشغيلة / الخلطة</label>
+                        <input 
+                          type="text" 
+                          name="batch_number" 
+                          value={certData.batch_number} 
+                          onChange={handleCertInputChange} 
+                          className="w-full px-4 py-2.5 rounded-xl text-right transition-all bg-white border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">وزن التعبئة</label>
+                        <input 
+                          type="text" 
+                          name="filling_weight" 
+                          value={certData.filling_weight} 
+                          onChange={handleCertInputChange} 
+                          className="w-full px-4 py-2.5 rounded-xl text-right transition-all bg-white border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">عدد الكراتين النهائي</label>
+                        <input 
+                          type="number" 
+                          name="carton_count" 
+                          value={certData.carton_count} 
+                          onChange={handleCertInputChange} 
+                          className="w-full px-4 py-2.5 rounded-xl text-right transition-all bg-white border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                        />
+                      </div>
+                      <div>
+                        <CustomDatePicker
+                          label="تاريخ الإنتاج"
+                          value={certData.production_date}
+                          onChange={(date) => setCertData({ ...certData, production_date: date })}
+                        />
+                      </div>
+                      
+                      <div>
+                        <CustomDatePicker
+                          label="تاريخ الانتهاء"
+                          value={certData.expiry_date}
+                          onChange={(date) => setCertData({ ...certData, expiry_date: date })}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">رقم شهادة التغليف</label>
+                        <input 
+                          type="text" 
+                          name="certificate_number" 
+                          value={certData.certificate_number} 
+                          onChange={handleCertInputChange} 
+                          className="w-full px-4 py-2.5 rounded-xl text-right transition-all bg-white border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">إلى مستودع</label>
+                        <input
+                          type="text"
+                          name="warehouse_target"
+                          value={certData.warehouse_target}
+                          onChange={handleCertInputChange}
+                          className="w-full px-4 py-2.5 rounded-xl text-right transition-all bg-white border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                          placeholder="اكتب اسم المستودع"
+                        />
+                      </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">الزبون</label>
-                      <input 
-                        type="text" 
-                        name="customer" 
-                        value={certData.customer} 
-                        onChange={handleCertInputChange} 
-                        disabled={selectedPallet.status !== 'packaging_in_progress'}
-                        className={`w-full px-4 py-2.5 rounded-xl text-right transition-all ${
-                          selectedPallet.status === 'packaging_in_progress'
-                            ? "bg-white border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                            : "bg-slate-50 border border-slate-100 text-slate-600 cursor-not-allowed"
-                        }`}
-                      />
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">الزبون</label>
+                        <input 
+                          type="text" 
+                          name="customer" 
+                          value={certData.customer} 
+                          onChange={handleCertInputChange} 
+                          className="w-full px-4 py-2.5 rounded-xl text-right transition-all bg-white border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">البلد</label>
+                        <input 
+                          type="text" 
+                          name="country" 
+                          value={certData.country} 
+                          onChange={handleCertInputChange} 
+                          className="w-full px-4 py-2.5 rounded-xl text-right transition-all bg-white border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">رقم الطلبية</label>
+                        <input 
+                          type="text" 
+                          name="order_number" 
+                          value={certData.order_number} 
+                          onChange={handleCertInputChange} 
+                          className="w-full px-4 py-2.5 rounded-xl text-right transition-all bg-white border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                        />
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">البلد</label>
-                      <input 
-                        type="text" 
-                        name="country" 
-                        value={certData.country} 
-                        onChange={handleCertInputChange} 
-                        disabled={selectedPallet.status !== 'packaging_in_progress'}
-                        className={`w-full px-4 py-2.5 rounded-xl text-right transition-all ${
-                          selectedPallet.status === 'packaging_in_progress'
-                            ? "bg-white border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                            : "bg-slate-50 border border-slate-100 text-slate-600 cursor-not-allowed"
-                        }`}
-                      />
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
+                        <label className="block text-xs font-medium text-indigo-500 mb-1">تاريخ التغليف</label>
+                        <div className="text-sm font-bold text-slate-800">{certData.date || "---"}</div>
+                      </div>
+                      <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
+                        <label className="block text-xs font-medium text-indigo-500 mb-1">الصنف</label>
+                        <div className="text-sm font-bold text-slate-800">{certData.item_name || "---"}</div>
+                      </div>
+                      <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
+                        <label className="block text-xs font-medium text-indigo-500 mb-1">رقم التشغيلة / الخلطة</label>
+                        <div className="text-sm font-bold text-slate-800">{certData.batch_number || "---"}</div>
+                      </div>
+                      <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
+                        <label className="block text-xs font-medium text-indigo-500 mb-1">وزن التعبئة</label>
+                        <div className="text-sm font-bold text-slate-800">{certData.filling_weight || "---"}</div>
+                      </div>
+                      <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
+                        <label className="block text-xs font-medium text-indigo-500 mb-1">عدد الكراتين النهائي</label>
+                        <div className="text-sm font-bold text-slate-800">{certData.carton_count || "---"}</div>
+                      </div>
+                      <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
+                        <label className="block text-xs font-medium text-indigo-500 mb-1">تاريخ الإنتاج</label>
+                        <div className="text-sm font-bold text-slate-800">{certData.production_date || "---"}</div>
+                      </div>
+                      <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
+                        <label className="block text-xs font-medium text-indigo-500 mb-1">تاريخ الانتهاء</label>
+                        <div className="text-sm font-bold text-slate-800">{certData.expiry_date || "---"}</div>
+                      </div>
+                      <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
+                        <label className="block text-xs font-medium text-indigo-500 mb-1">رقم شهادة التغليف</label>
+                        <div className="text-sm font-bold text-slate-800">{certData.certificate_number || "---"}</div>
+                      </div>
+                      <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
+                        <label className="block text-xs font-medium text-indigo-500 mb-1">إلى مستودع</label>
+                        <div className="text-sm font-bold text-slate-800">{certData.warehouse_target || "---"}</div>
+                      </div>
+                      <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
+                        <label className="block text-xs font-medium text-indigo-500 mb-1">الزبون</label>
+                        <div className="text-sm font-bold text-slate-800">{certData.customer || "---"}</div>
+                      </div>
+                      <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
+                        <label className="block text-xs font-medium text-indigo-500 mb-1">البلد</label>
+                        <div className="text-sm font-bold text-slate-800">{certData.country || "---"}</div>
+                      </div>
+                      <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
+                        <label className="block text-xs font-medium text-indigo-500 mb-1">رقم الطلبية</label>
+                        <div className="text-sm font-bold text-slate-800">{certData.order_number || "---"}</div>
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">رقم الطلبية</label>
-                      <input 
-                        type="text" 
-                        name="order_number" 
-                        value={certData.order_number} 
-                        onChange={handleCertInputChange} 
-                        disabled={selectedPallet.status !== 'packaging_in_progress'}
-                        className={`w-full px-4 py-2.5 rounded-xl text-right transition-all ${
-                          selectedPallet.status === 'packaging_in_progress'
-                            ? "bg-white border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                            : "bg-slate-50 border border-slate-100 text-slate-600 cursor-not-allowed"
-                        }`}
-                      />
-                    </div>
-                  </div>
+                  )}
 
                   <div className="space-y-2">
                     <label className="block text-sm font-medium text-slate-700">ملاحظات التغليف</label>
-                    <textarea
-                      name="notes"
-                      value={certData.notes}
-                      onChange={handleCertInputChange}
-                      disabled={selectedPallet.status !== 'packaging_in_progress'}
-                      rows={3}
-                      className={`w-full px-4 py-3 rounded-xl text-right transition-all ${
-                        selectedPallet.status === 'packaging_in_progress'
-                          ? "bg-white border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                          : "bg-slate-50 border border-slate-100 text-slate-600 cursor-not-allowed"
-                      }`}
-                      placeholder="أي ملاحظات إضافية..."
-                    />
+                    {selectedPallet.status === 'packaging_in_progress' ? (
+                      <textarea
+                        name="notes"
+                        value={certData.notes}
+                        onChange={handleCertInputChange}
+                        rows={3}
+                        className="w-full px-4 py-3 rounded-xl text-right transition-all bg-white border border-slate-200 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                        placeholder="أي ملاحظات إضافية..."
+                      />
+                    ) : (
+                      <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 text-sm text-slate-700 min-h-[60px]">
+                        {certData.notes || "لا توجد ملاحظات"}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
